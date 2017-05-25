@@ -23,17 +23,26 @@ extern int8 **environ;
 //stilla IFS og PATH í eitthvað nothæft, TZ geymd
 //NOTE: IFS og TZ eru ekki skilgreindar á mac
 void sanitizeEnvironmentVariables() {
+	/*int8 pathVar[strlen("PATH=") + strlen(getenv("PATH")) + 1];
+	strcpy(pathVar, "PATH=");
+	strcat(pathVar, getenv("PATH"));*/
+	
 	int8 *sanitizedVars[] = {
 		"IFS= \t\n",
-		"PATH=" _PATH_STDPATH,
+		"PATH=" _PATH_STDPATH //það er mögulega eitthvað sniðugra á mac þar sem path er aðeins öðruvísi
+		//pathVar
 	};
 
 	int8 **newEnvironment;
 	size_t newLength = 0;
 
-	//NOTE: +1 fyrir TZ og +1 fyrir 0
-	newLength = arr_length(sanitizedVars) + 2;
+	bool timeZoneDefined = (getenv("TZ") != NULL);
+
+	newLength = arr_length(sanitizedVars) + 1;
+	if(timeZoneDefined) newLength++;
+
 	newEnvironment = allocateMemory(newLength, int8 *);
+	newEnvironment[newLength-1] = NULL;
 
 	for(uint32 i = 0; i < arr_length(sanitizedVars); i++) {
 		newEnvironment[i] = allocateMemory(strlen(sanitizedVars[i]) + 1, int8); //+1 fyrir null term streng(held það þurfi að vera svoleiðis)
@@ -43,26 +52,21 @@ void sanitizeEnvironmentVariables() {
 			newEnvironment[i][stringIndex] = sanitizedVars[i][stringIndex];
 		}
 
-		newEnvironment[i][stringIndex] = 0;
+		newEnvironment[i][stringIndex] = NULL;
 	}
 
-	size_t timeZoneVarLength = 3 + strlen((getenv("TZ") == NULL) ? "" : getenv("TZ"));//3 = strlen("TZ=")
-	int8 timeZoneVar[timeZoneVarLength+1];
-	if(timeZoneVarLength > 3) {
+	if(timeZoneDefined) {
+		size_t timeZoneVarLength = 3 + strlen(getenv("TZ"));//3 = strlen("TZ=")
+		int8 timeZoneVar[timeZoneVarLength+1];
 
+		timeZoneVar[timeZoneVarLength] = 0;
+
+		sprintf(timeZoneVar, "TZ=%s", getenv("TZ"));
+		newEnvironment[newLength-2] = allocateMemory(timeZoneVarLength + 1, int8);
+		newEnvironment[newLength-2][timeZoneVarLength] = 0;
+
+		memcpy(timeZoneVar, newEnvironment[newLength-2], timeZoneVarLength);
 	}
-	timeZoneVar[timeZoneVarLength] = 0;
-	printf("%d\n", arr_length(timeZoneVar));
-
-	sprintf(timeZoneVar, "TZ=%s", (timeZoneVarLength > 3) ? getenv("TZ") : "");
-	newEnvironment[newLength-2] = allocateMemory(timeZoneVarLength + 1, int8);
-	newEnvironment[newLength-2][timeZoneVarLength] = 0;
-
-	for(uint32 i = 0; timeZoneVar[i] != 0; i++) {
-		newEnvironment[newLength-2][i] = timeZoneVar[i];
-	}
-
-	newEnvironment[newLength-1] = 0;
 
 	environ = newEnvironment;
 }
@@ -70,15 +74,18 @@ void sanitizeEnvironmentVariables() {
 int main() {
 	pid_t childProcess = fork();
 	
+	printf("%d\n", childProcess);
+
 	if(childProcess == 0) {
 		printf("this is the child\n");
 		sanitizeEnvironmentVariables();
+		//execlp("lldb", "", "testprog", NULL);
+		execl("testprog", "pizza", NULL); //testprog mun prenta út pizza
 	}else {
 		printf("this is the parent\n");
-	}
-
-	for(int i = 0; environ[i] != 0; i++) {
-		printf("%s\n", environ[i]);
+		int status;
+		waitpid(childProcess, &status, 0);
+		printf("status: %d\n", WIFEXITED(status));
 	}
 
 	return 0;
